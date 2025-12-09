@@ -73,12 +73,12 @@ IngWebRetoJs/
 ## 📸 Capturas de Pantalla
 
 ### Vista Principal
-![Speedometer & Compass](screenshot.png)
+![Speedometer & Compass](screenshotreto.jpg)
 
 *Velocímetro mostrando 0 km/h y brújula apuntando al Norte*
 
 ### En Movimiento
-![Compass en uso](compass-demo.gif)
+![Compass en uso](funcionamientoreto_page-0001.jpg)
 
 *Brújula actualizándose en tiempo real mientras el usuario se mueve*
 
