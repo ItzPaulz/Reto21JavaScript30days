@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Speedometer & Compass</title>
+  <style>
+    /* estilos sencillos, sin efectos avanzados */
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 10px;
+      font-family: Arial, sans-serif;
+      background: #222;
+      color: #fff;
+    }
+    .wrap {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #444;
+    }
+    h1 { margin: 0; font-size: 20px; }
+    .small { font-size: 12px; color: #bbb; }
+
+    .controls { margin: 10px 0; display: flex; gap: 8px; }
+    button {
+      border: 1px solid #555;
+      background: #333;
+      color: #fff;
+      padding: 8px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .row { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .card {
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 12px;
+      background: #2a2a2a;
+    }
+
+    .speed { text-align: center; }
+    .speed .value { font-size: 48px; font-weight: bold; }
+    .speed .unit { font-size: 16px; color: #bbb; }
+
+    .compass-wrap { display: grid; gap: 8px; justify-items: center; }
+    .compass {
+      width: 220px;
+      height: 220px;
+      border: 1px solid #555;
+      border-radius: 50%;
+      position: relative;
+      background: #1f1f1f;
+    }
+    .labels {
+      position: absolute;
+      inset: 0;
+      color: #bbb;
+      font-weight: bold;
+    }
+    .labels span { position: absolute; transform: translate(-50%, -50%); }
+    .labels .N { top: 12px; left: 50%; color: #fff; }
+    .labels .E { top: 50%; right: 12px; }
+    .labels .S { bottom: 12px; left: 50%; }
+    .labels .W { top: 50%; left: 12px; }
+
+    .needle {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 4px;
+      height: 90px;
+      transform-origin: 50% 100%;
+      transform: translate(-50%, -100%) rotate(0deg);
+      background: #ff4444;
+      border-radius: 3px;
+      transition: transform 0.16s ease-out;
+    }
+    .dot {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 12px;
+      height: 12px;
+      transform: translate(-50%, -50%);
+      background: #000;
+      border: 2px solid #666;
+      border-radius: 50%;
+    }
+
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Speedometer & Compass</h1>
+    </header>
+
+    <div class="controls">
+      <button id="startBtn">Start</button>
+      <button id="stopBtn" disabled>Stop</button>
+    </div>
+
+    <div class="row">
+      <section class="card">
+        <div class="speed">
+          <div class="value">
+            <span id="speedVal">0</span>
+            <span class="unit">km/h</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="compass-wrap">
+          <div class="compass" aria-label="Compass">
+            <div class="labels">
+              <span class="N">N</span>
+              <span class="E">E</span>
+              <span class="S">S</span>
+              <span class="W">W</span>
+            </div>
+            <div class="needle" id="needle"></div>
+            <div class="dot"></div>
+          </div>
+          <div class="grid2">
+            <div>Heading: <b id="headingDeg">0°</b></div>
+            <div>Dir: <b id="headingCard">N</b></div>
+          </div>
+          <div class="small" id="compassSource">Source: none</div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    // Variables globales
+    let running = false;
+    let watchId = null;
+    let lastPos = null;
+    let lastTime = 0;
+    let orientHeading = null;
+    let speedSmooth = null;
+    let headingSmooth = 0;
+    let headingSrc = "none";
+
+    // Funciones auxiliares
+    const wrap = (d) => ((d % 360) + 360) % 360;
+    const rad = (d) => d * Math.PI / 180;
+    const deg = (r) => r * 180 / Math.PI;
+
+    // Calcular distancia entre dos puntos GPS 
+    function distance(p1, p2) {
+      const R = 6371000;
+      const dLat = rad(p2.lat - p1.lat);
+      const dLon = rad(p2.lon - p1.lon);
+      const a = Math.sin(dLat/2)**2 + Math.cos(rad(p1.lat)) * Math.cos(rad(p2.lat)) * Math.sin(dLon/2)**2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    }
+
+    // Calcular rumbo entre dos puntos GPS
+    function angle(p1, p2) {
+      const lat1 = rad(p1.lat), lat2 = rad(p2.lat);
+      const lon1 = rad(p1.lon), lon2 = rad(p2.lon);
+      const y = Math.sin(lon2 - lon1) * Math.cos(lat2);
+      const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1);
+      return wrap(deg(Math.atan2(y, x)));
+    }
+
+    function smooth(prev, next, a) {
+      let d = wrap(next) - wrap(prev);
+      if (d > 180) d -= 360;
+      if (d < -180) d += 360;
+      return wrap(prev + a * d);
+    }
+
+    // Mostrar velocidad en pantalla
+    function showSpeed(ms) {
+      speedVal.textContent = Math.round((ms || 0) * 3.6);
+    }
+
+    // Mostrar brújula en pantalla
+    function showCompass(deg, src) {
+      const r = wrap(deg);
+      needle.style.transform = `translate(-50%, -100%) rotate(${r}deg)`;
+      headingDeg.textContent = Math.round(r) + "°";
+      const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+      headingCard.textContent = dirs[Math.round(r / 22.5) % 16];
+      compassSource.textContent = "Source: " + src;
+    }
+
+    // Manejar actualización de posición GPS
+    function onPos(pos) {
+      const c = pos.coords;
+      const now = pos.timestamp || Date.now();
+      let spd = c.speed;
+
+      // Calcular velocidad si el GPS no la proporciona
+      if (!spd || spd <= 0) {
+        if (lastPos) {
+          const p1 = {lat: lastPos.coords.latitude, lon: lastPos.coords.longitude};
+          const p2 = {lat: c.latitude, lon: c.longitude};
+          const dt = (now - lastTime) / 1000;
+          const d = distance(p1, p2);
+          if (dt > 0 && d >= 0.5) spd = d / dt;
+        }
+      }
+
+      // Suavizar velocidad
+      if (spd) speedSmooth = speedSmooth ? speedSmooth + 0.3 * (spd - speedSmooth) : spd;
+      showSpeed(speedSmooth || spd || 0);
+
+      // Calcular heading desde GPS
+      let gpsH = null;
+      if (c.heading && spd > 0.5) {
+        gpsH = wrap(c.heading);
+      } else if (lastPos) {
+        const p1 = {lat: lastPos.coords.latitude, lon: lastPos.coords.longitude};
+        const p2 = {lat: c.latitude, lon: c.longitude};
+        if (distance(p1, p2) > 2) gpsH = angle(p1, p2);
+      }
+
+      // Actualizar heading con prioridad GPS
+      const next = gpsH != null ? gpsH : (orientHeading || 0);
+      headingSrc = gpsH != null ? "GPS" : (orientHeading != null ? "Orientation" : "none");
+      headingSmooth = smooth(headingSmooth, next, 0.25);
+      showCompass(headingSmooth, headingSrc);
+
+      lastPos = pos;
+      lastTime = now;
+    }
+
+    // Iniciar GPS
+    function startGPS() {
+      if (navigator.geolocation) {
+        watchId = navigator.geolocation.watchPosition(onPos, null, {enableHighAccuracy: true});
+      }
+    }
+
+    // Detener GPS
+    function stopGPS() {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
+
+    // Manejar sensor de orientación
+    function onOrient(e) {
+      let h = e.webkitCompassHeading || (e.alpha ? 360 - e.alpha : null);
+      if (!h) return;
+      const so = (screen.orientation && screen.orientation.angle) || 0;
+      orientHeading = wrap(h + so);
+      if (headingSrc !== "GPS") {
+        headingSmooth = smooth(headingSmooth, orientHeading, 0.25);
+        showCompass(headingSmooth, "Orientation");
+      }
+    }
+
+    // Iniciar sensor de orientación
+    async function startOrient() {
+      if (!window.DeviceOrientationEvent) return;
+      try {
+        if (typeof DeviceOrientationEvent.requestPermission === "function") {
+          const res = await DeviceOrientationEvent.requestPermission();
+          if (res !== "granted") return;
+        }
+        window.addEventListener("deviceorientation", onOrient);
+      } catch (e) {}
+    }
+
+    // Detener sensor de orientación
+    function stopOrient() {
+      window.removeEventListener("deviceorientation", onOrient);
+    }
+
+    // Iniciar aplicación
+    async function start() {
+      if (running) return;
+      running = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      startGPS();
+      await startOrient();
+    }
+
+    // Detener aplicación
+    function stop() {
+      if (!running) return;
+      running = false;
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      stopGPS();
+      stopOrient();
+    }
+
+    startBtn.addEventListener("click", start);
+    stopBtn.addEventListener("click", stop);
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) stopOrient();
+      else if (running) startOrient();
+    });
+  </script>
+</body>
+</html>
