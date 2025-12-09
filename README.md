@@ -160,7 +160,7 @@ Proyecto desarrollado como parte del aprendizaje de JavaScript puro y APIs del n
 
 ## 📄 Licencia
 
-Este proyecto es de código abierto y está disponible bajo la licencia MIT.
+PAUL ALEJANDRO LARREA AGUILAR
 
 ---
 
