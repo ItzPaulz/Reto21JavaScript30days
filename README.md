@@ -73,7 +73,7 @@ IngWebRetoJs/
 ## 📸 Capturas de Pantalla
 
 ### Vista Principal
-![Speedometer & Compass](screenshotreto.jpg)
+![Speedometer & Compass](retoimagen_page-0001.jpg)
 
 *Velocímetro mostrando 0 km/h y brújula apuntando al Norte*
 
